@@ -1,0 +1,16 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  bert_classifier:
+    build: .
+    # Map port 5000 inside the container to port 8000 on your host machine
+    ports:
+      - "8000:5000"
+    # Restart the container if it fails
+    restart: always
+    volumes:
+      # Optional: Mount the saved_models to avoid rebuilding the image 
+      # every time the model directory changes. 
+      # Comment this out if you prefer the model to be baked into the image.
+      - ./saved_models:/app/saved_models

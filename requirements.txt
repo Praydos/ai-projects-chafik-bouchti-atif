@@ -1,0 +1,12 @@
+# requirements.txt
+# Flask for the web app
+Flask
+
+# TensorFlow for loading the model
+tensorflow==2.16.1 
+
+# Hugging Face Transformers for the tokenizer
+transformers==4.42.3 
+
+# Gunicorn is a production WSGI HTTP Server for UNIX
+gunicorn

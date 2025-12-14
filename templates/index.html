@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BERT News Classifier</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f4f4f9; }
+        h1 { color: #333; text-align: center; }
+        textarea { width: 100%; min-height: 150px; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
+        button:hover { background-color: #0056b3; }
+        #result { margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background-color: #fff; }
+        #result p { margin: 5px 0; }
+        .category { font-weight: bold; color: #28a745; font-size: 1.2em; }
+    </style>
+</head>
+<body>
+    <h1>📰 AG News BERT Classifier</h1>
+
+    <p>Enter a news headline or snippet below to classify its category (World, Sports, Business, or Sci/Tech).</p>
+
+    <textarea id="text-input" placeholder="E.g., Injured Heskey to miss England friendly NEWCASTLE, England (AP) - Striker Emile Heskey..."></textarea>
+    <button onclick="classifyText()">Classify Text</button>
+
+    <div id="result">
+        <h2>Classification Result:</h2>
+        <p id="category-output">Category: <span class="category">...</span></p>
+        <p id="confidence-output">Confidence: <span>...</span></p>
+    </div>
+
+    <script>
+        function classifyText() {
+            const text = document.getElementById('text-input').value.trim();
+            const categoryOutput = document.getElementById('category-output').querySelector('.category');
+            const confidenceOutput = document.getElementById('confidence-output').querySelector('span');
+
+            if (text === "") {
+                categoryOutput.textContent = "Please enter some text.";
+                confidenceOutput.textContent = "";
+                return;
+            }
+
+            // Simple fetch call to the Flask backend
+            fetch('/predict', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ text: text })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    categoryOutput.textContent = data.category;
+                    confidenceOutput.textContent = `${(data.confidence * 100).toFixed(2)}%`;
+                } else {
+                    categoryOutput.textContent = "Error: " + (data.error || "Unknown error");
+                    confidenceOutput.textContent = "";
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                categoryOutput.textContent = "An error occurred connecting to the server.";
+                confidenceOutput.textContent = "";
+            });
+        }
+    </script>
+</body>
+</html>
