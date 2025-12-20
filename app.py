@@ -1,24 +1,20 @@
-# app.py
 import os
 import tensorflow as tf
 from transformers import AutoTokenizer
 from flask import Flask, render_template, request, jsonify
+import json
+from datetime import datetime
 
 # --- Configuration ---
-# Set the directory where your model and tokenizer are saved
-# Make sure these paths match the ones copied into the Docker image
 SAVE_DIR = "saved_models" 
 MODEL_PATH = os.path.join(SAVE_DIR, "bert_sentiment_20251206_162615")
 TOKENIZER_PATH = os.path.join(SAVE_DIR, "tokenizer")
 
 # The class names for the AG_News dataset
-# 0: World, 1: Sports, 2: Business, 3: Sci/Tech
 CLASS_NAMES = ['World', 'Sports', 'Business', 'Sci/Tech']
 MAX_LENGTH = 128
 
-# --- Model Loading ---
-# Global variables to hold the loaded model and tokenizer
-# This ensures they are loaded only once when the app starts
+# Global variables for model and tokenizer
 tokenizer = None
 infer = None
 NUM_CLASSES = 0
@@ -41,64 +37,12 @@ def load_model():
         
         # Determine number of classes from the model's output structure
         output_name = list(infer.structured_outputs.keys())[0]
-        # The shape is usually [None, Num_Classes]
         NUM_CLASSES = infer.structured_outputs[output_name].shape[1]
         print(f"Model outputs {NUM_CLASSES} classes.")
 
     except Exception as e:
         print(f"❌ Error loading model or tokenizer: {e}")
-        # In a real application, you might raise an exception or exit here
         raise RuntimeError(f"Could not load required components: {e}")
-
-# --- Prediction Function ---
-def predict(text):
-    """Predicts the category of the input text."""
-    if not infer:
-        raise RuntimeError("Model is not loaded.")
-        
-    # Tokenize the input text
-    inputs = tokenizer(
-        text,
-        padding='max_length',
-        truncation=True,
-        max_length=MAX_LENGTH,
-        return_tensors='np' # Returns numpy arrays
-    )
-    
-    # Create input dictionary using tf.constant and correct dtype (tf.int64)
-    input_dict = {
-        'input_ids': tf.constant(inputs['input_ids'], dtype=tf.int64),
-        'attention_mask': tf.constant(inputs['attention_mask'], dtype=tf.int64),
-        'token_type_ids': tf.constant(inputs['token_type_ids'], dtype=tf.int64)
-    }
-    
-    # Run the prediction
-    output = infer(**input_dict)
-    
-    # Extract predictions (e.g., 'output_0' or whatever the key is)
-    output_key = list(output.keys())[0]
-    predictions = output[output_key]
-    
-    # Process the output
-    # Apply softmax to get probabilities
-    probabilities = tf.nn.softmax(predictions, axis=-1).numpy()[0]
-    # Get the index of the highest probability
-    predicted_class_index = tf.argmax(predictions, axis=1).numpy()[0]
-
-    # Map the index to a class name
-    if NUM_CLASSES == 4 and len(CLASS_NAMES) == 4:
-        sentiment = CLASS_NAMES[predicted_class_index]
-    else:
-        # Fallback or generic handling if class count doesn't match
-        sentiment = f"Class {predicted_class_index}"
-
-    return {
-        'text': text,
-        'category': sentiment,
-        'predicted_class_index': int(predicted_class_index),
-        'confidence': float(probabilities[predicted_class_index]),
-        'probabilities': probabilities.tolist()
-    }
 
 # --- Flask App Initialization ---
 app = Flask(__name__)
@@ -126,19 +70,91 @@ def handle_predict():
         return jsonify({'error': 'No text provided for classification.'}), 400
 
     try:
-        result = predict(text)
-        # Return a simple JSON response for the frontend
-        return jsonify({
+        # Input validation
+        if len(text) > 2000:
+            return jsonify({'error': 'Text too long. Maximum 2000 characters allowed.'}), 400
+        
+        # Tokenize the input text
+        inputs = tokenizer(
+            text,
+            padding='max_length',
+            truncation=True,
+            max_length=MAX_LENGTH,
+            return_tensors='np'
+        )
+        
+        # Create input dictionary
+        input_dict = {
+            'input_ids': tf.constant(inputs['input_ids'], dtype=tf.int64),
+            'attention_mask': tf.constant(inputs['attention_mask'], dtype=tf.int64),
+            'token_type_ids': tf.constant(inputs['token_type_ids'], dtype=tf.int64)
+        }
+        
+        # Run the prediction
+        output = infer(**input_dict)
+        
+        # Extract predictions
+        output_key = list(output.keys())[0]
+        predictions = output[output_key]
+        
+        # Apply softmax to get probabilities
+        probabilities = tf.nn.softmax(predictions, axis=-1).numpy()[0]
+        
+        # Get the index of the highest probability
+        predicted_class_index = tf.argmax(predictions, axis=1).numpy()[0]
+        
+        # Get confidence score
+        confidence = float(probabilities[predicted_class_index])
+        
+        # Get category name
+        if NUM_CLASSES == 4 and len(CLASS_NAMES) == 4:
+            category = CLASS_NAMES[predicted_class_index]
+        else:
+            category = f"Class {predicted_class_index}"
+
+        # Prepare detailed response
+        response = {
             'success': True,
-            'category': result['category'],
-            'confidence': f"{result['confidence']:.2f}",
-            'all_probabilities': result['probabilities']
-        })
+            'category': category,
+            'confidence': confidence,
+            'all_probabilities': probabilities.tolist(),
+            'predicted_index': int(predicted_class_index),
+            'text_preview': text[:100] + ('...' if len(text) > 100 else ''),
+            'timestamp': datetime.now().isoformat(),
+            'model_info': {
+                'model_name': 'BERT News Classifier',
+                'num_classes': NUM_CLASSES,
+                'max_length': MAX_LENGTH
+            }
+        }
+        
+        return jsonify(response)
+        
     except Exception as e:
         print(f"Prediction error: {e}")
-        return jsonify({'error': f'An error occurred during prediction: {e}'}), 500
+        app.logger.error(f"Prediction failed: {str(e)}")
+        return jsonify({'error': f'An error occurred during prediction: {str(e)}'}), 500
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for monitoring."""
+    return jsonify({
+        'status': 'healthy',
+        'model_loaded': infer is not None,
+        'tokenizer_loaded': tokenizer is not None,
+        'timestamp': datetime.now().isoformat()
+    })
+
+@app.route('/model-info', methods=['GET'])
+def model_info():
+    """Returns information about the loaded model."""
+    return jsonify({
+        'model_name': 'BERT News Classifier',
+        'classes': CLASS_NAMES,
+        'max_length': MAX_LENGTH,
+        'num_classes': NUM_CLASSES,
+        'model_path': MODEL_PATH
+    })
 
 if __name__ == '__main__':
-    # Start the Flask development server (only used without Docker in development)
-    # The Dockerfile/docker-compose will use gunicorn for production deployment
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000, debug=True)
