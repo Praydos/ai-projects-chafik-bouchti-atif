@@ -32,6 +32,7 @@ The model is built on the `bert-base-uncased` architecture and fine-tuned on the
 
 * Docker and Docker Compose
 * The `saved_models/` directory (containing your fine-tuned BERT model and tokenizer)
+* model link : https://drive.google.com/file/d/1d0A2kV9aRi9LnRLv7tA2Ed_M-VO8zkPT/view?usp=sharing
 
 ### Running with Docker (Recommended)
 
